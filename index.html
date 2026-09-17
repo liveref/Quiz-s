@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>교재 단답 문제 생성기</title>
+<style>
+  :root{
+    --bg:#F3F5F8; --surface:#FFFFFF; --ink:#1B2333; --muted:#667085;
+    --line:#E3E7EE; --accent:#2454E0; --accent-dim:#EAF0FE; --accent-ink:#12306B;
+    --good:#1D63B8; --good-bg:#EDF4FC; --bad:#A63A3A; --bad-bg:#FDF1F1;
+    --warn:#8A5A00; --warn-bg:#FDF1D9; --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0;padding:0; width:100%; height:100%;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.55;
+  }
+  #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);position:relative;}
+  header{padding:16px 20px 12px;position:sticky;top:0;background:var(--bg);z-index:5;border-bottom:0.5px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+  header div h1{font-size:17px;font-weight:600;margin:0 0 2px;}
+  header div p{font-size:12.5px;color:var(--muted);margin:0;}
+  .settings-btn{background:none;border:none;cursor:pointer;font-size:18px;padding:4px;color:var(--muted);}
+  
+  main{flex:1;padding:16px 20px 96px;}
+  nav#bottom-nav{position:fixed;bottom:0;left:0;right:0;max-width:480px;margin:0 auto;display:flex;background:var(--surface);border-top:0.5px solid var(--line);z-index:10;}
+  nav#bottom-nav button{flex:1;border:none;background:none;padding:12px 4px 16px;font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;}
+  nav#bottom-nav button .dot{width:5px;height:5px;border-radius:50%;background:transparent;}
+  nav#bottom-nav button.active{color:var(--accent);font-weight:600;}
+  nav#bottom-nav button.active .dot{background:var(--accent);}
+
+  .card{background:var(--surface);border:0.5px solid var(--line);border-radius:var(--radius);padding:18px 18px;margin-bottom:14px;}
+  .muted{color:var(--muted);}
+  .small{font-size:12.5px;}
+  h2.section-title{font-size:15px;font-weight:600;margin:0 0 10px;}
+
+  button.primary{
+    width:100%;padding:14px;border:none;border-radius:10px;background:var(--accent);color:#fff;
+    font-size:14.5px;font-weight:600;cursor:pointer;
+  }
+  button.primary:disabled{background:#B9C4E8;cursor:not-allowed;}
+  button.secondary{
+    padding:11px 14px;border:0.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);
+    font-size:13.5px;font-weight:500;cursor:pointer;
+  }
+  button.ghost{border:none;background:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:4px 0;}
+  input[type="file"]{display:none;}
+  label.upload-box{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    border:1.5px dashed var(--line);border-radius:var(--radius);padding:38px 16px;text-align:center;cursor:pointer;
+    background:var(--surface);
+  }
+  label.upload-box .big{font-size:14.5px;font-weight:600;}
+  label.upload-box .small{color:var(--muted);}
+
+  .qcard .qtext{font-size:15px;font-weight:600;margin:0 0 4px;}
+  .opt{
+    display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:13px;
+    border:0.5px solid var(--line);border-radius:10px;background:#fff;font-size:13.5px;margin-bottom:8px;cursor:pointer;
+  }
+  .opt .lbl{font-weight:600;color:var(--muted);flex-shrink:0;}
+  .opt.correct{border-color:var(--good);background:var(--good-bg);}
+  .opt.correct .lbl{color:var(--good);}
+  .opt.wrong{border-color:var(--bad);background:var(--bad-bg);}
+  .opt.wrong .lbl{color:var(--bad);}
+  .opt.disabled{cursor:default;}
+  .explain{font-size:12.5px;color:var(--muted);margin:6px 0 0 30px;}
+  .opt.correct + .explain{color:var(--good);}
+  .opt.wrong + .explain{color:var(--bad);}
+
+  .feedback-banner{padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:600;margin-bottom:14px;}
+  .feedback-banner.good{background:var(--good-bg);color:var(--good);}
+  .feedback-banner.bad{background:var(--bad-bg);color:var(--bad);}
+
+  .note-item{border:0.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;}
+  .note-item .note-q{font-size:13.5px;font-weight:600;margin:0 0 8px;}
+  .note-item .note-row{display:flex;justify-content:space-between;gap:8px;margin-top:10px;}
+
+  .empty{text-align:center;padding:50px 20px;color:var(--muted);}
+  .empty .big{font-size:14.5px;font-weight:600;color:var(--ink);margin-bottom:6px;}
+
+  .spinner{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;margin:0 auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;padding:60px 20px;color:var(--muted);font-size:13px;}
+
+  .stat-row{display:flex;gap:10px;margin-bottom:14px;}
+  .stat-box{flex:1;background:var(--surface);border:0.5px solid var(--line);border-radius:10px;padding:10px 12px;}
+  .stat-box .num{font-size:19px;font-weight:600;}
+  .stat-box .lbl{font-size:11.5px;color:var(--muted);}
+
+  .error-box{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:14px;white-space:pre-wrap;word-break:break-word;}
+  .text-input{width:100%;border:0.5px solid var(--line);border-radius:10px;padding:12px;font-size:16px;font-family:inherit;background:#fff;margin-top:6px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1 id="header-title">교재 단답 문제 생성기</h1>
+      <p id="header-sub">교재 캡처 이미지나 PDF를 올리면 바로 문제를 만들어드려요</p>
+    </div>
+    <button class="settings-btn" onclick="setView('settings')" title="설정">⚙️</button>
+  </header>
+  <main id="app-main"></main>
+  <nav id="bottom-nav">
+    <button data-view="select" id="nav-select"><span class="dot"></span>자료 업로드</button>
+    <button data-view="quiz" id="nav-quiz"><span class="dot"></span>문제 풀기</button>
+    <button data-view="notes" id="nav-notes"><span class="dot"></span>오답노트</button>
+  </nav>
+</div>
+
+<script>
+async function storageGet(key){
+  try{ return localStorage.getItem(key); }catch(e){ return null; }
+}
+async function storageSet(key, value){
+  try{ localStorage.setItem(key, value); }catch(e){}
+}
+
+const state = {
+  view: "select",
+  apiKey: "",
+  fileName: "",
+  fileData: null,
+  current: null,
+  queue: [],
+  prefetching: false,
+  prefetchPromise: null,
+  loadingQuestion: false,
+  errorMsg: "",
+  askedQuestions: [],
+  wrongNotes: [],
+  stats: { asked: 0, correct: 0 }
+};
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function escapeAttr(s){
+  return String(s).replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function persistState(){
+  await storageSet("vision-filename", state.fileName);
+  await storageSet("vision-filedata", JSON.stringify(state.fileData));
+  await storageSet("gemini-apikey", state.apiKey);
+}
+async function loadPersisted(){
+  const fname = await storageGet("vision-filename");
+  const fdata = await storageGet("vision-filedata");
+  const notesJson = await storageGet("wrongnotes");
+  const apiKey = await storageGet("gemini-apikey");
+  
+  if(fname) state.fileName = fname;
+  if(fdata){ try{ state.fileData = JSON.parse(fdata); }catch(e){ state.fileData = null; } }
+  if(notesJson){ try{ state.wrongNotes = JSON.parse(notesJson); }catch(e){ state.wrongNotes = []; } }
+  if(apiKey) state.apiKey = apiKey;
+}
+async function saveWrongNotes(){
+  await storageSet("wrongnotes", JSON.stringify(state.wrongNotes));
+}
+
+function downloadBackup() {
+  if (state.wrongNotes.length === 0) {
+    alert("저장할 오답노트가 없습니다.");
+    return;
+  }
+  const data = { notes: state.wrongNotes, stats: state.stats, apiKey: state.apiKey };
+  const blob = new Blob([JSON.stringify(data)], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "오답노트_백업데이터.txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function restoreBackup(file) {
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if(data.notes) state.wrongNotes = data.notes;
+      if(data.stats) state.stats = data.stats;
+      if(data.apiKey) state.apiKey = data.apiKey;
+      await saveWrongNotes();
+      alert("✅ 오답노트 데이터가 성공적으로 복구되었습니다!");
+      setView("notes");
+    } catch(err) {
+      alert("❌ 잘못된 백업 파일입니다.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function sanitizeForApi(str){
+  let out = "";
+  const s = String(str);
+  for(let i = 0; i < s.length; i++){
+    const code = s.charCodeAt(i);
+    if(code >= 0xD800 && code <= 0xDBFF){
+      const next = s.charCodeAt(i + 1);
+      if(next >= 0xDC00 && next <= 0xDFFF){ out += s[i] + s[i + 1]; i++; }
+      continue;
+    }
+    if(code >= 0xDC00 && code <= 0xDFFF) continue;
+    if(code === 9 || code === 10 || code === 13){ out += s[i]; continue; }
+    if(code < 32 || code === 127) continue;
+    out += s[i];
+  }
+  return out;
+}
+
+async function handleFileUpload(file){
+  state.errorMsg = "";
+  state.view = "select";
+  render();
+  const mainEl = document.getElementById("app-main");
+  mainEl.innerHTML = '<div class="loading-wrap"><div class="spinner"></div><p>파일을 읽고 있어요…</p></div>';
+  
+  try{
+    const reader = new FileReader();
+    reader.onload = async function(e){
+      const res = e.target.result;
+      const base64Index = res.indexOf(",");
+      const base64 = res.slice(base64Index + 1);
+      state.fileData = {
+        mimeType: file.type || "image/jpeg",
+        base64: base64
+      };
+      state.fileName = file.name;
+      state.queue = [];
+      state.askedQuestions = [];
+      await persistState();
+      render();
+    };
+    reader.readAsDataURL(file);
+  }catch(e){
+    state.errorMsg = "파일을 읽는 중 문제가 발생했어요.";
+    render();
+  }
+}
+
+async function fetchOneQuestion(){
+  if(!state.apiKey) throw new Error("API_KEY_MISSING");
+  if(!state.fileData) throw new Error("NO_FILE");
+
+  const recentQs = state.askedQuestions.slice(-5).map(sanitizeForApi);
+  let avoid = "";
+  if(recentQs.length){
+    avoid = "\n\n다음 문제들과는 다른 새로운 내용을 출제해주세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
+  }
+
+  const systemInstruction = "당신은 한국어 자격시험 출제 전문가입니다. 첨부된 교재 이미지/문서 내용을 근거로 실제 시험 수준의 4지선다 문제를 만듭니다.";
+  
+  const prompt = `첨부된 교재 자료를 분석하여 4지선다 문제를 1개 만들어주세요.\n` +
+    `조건:\n- question: 명확하고 구체적인 질문 (한 문장)\n- options: 선택지 4개 배열, 정답 1개와 그럴듯한 오답 3개 (※ 주의: 모든 선택지는 긴 문장이 아닌, 아주 짧은 단어나 명사 위주의 '단답형'으로만 작성할 것)\n` +
+    `- answerIndex: 정답의 인덱스(0~3, 정수)\n- explanations: 4개 선택지 각각에 대한 해설 배열 (왜 맞는지, 왜 틀렸는지 구체적으로)` +
+    avoid;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${state.apiKey}`;
+
+  const requestBody = JSON.stringify({
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents: [{
+      role: "user",
+      parts: [
+        { inline_data: { mime_type: state.fileData.mimeType, data: state.fileData.base64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: {
+      response_mime_type: "application/json",
+      response_schema: {
+        type: "OBJECT",
+        properties: {
+          question: { type: "STRING" },
+          options: { type: "ARRAY", items: { type: "STRING" } },
+          answerIndex: { type: "INTEGER" },
+          explanations: { type: "ARRAY", items: { type: "STRING" } }
+        },
+        required: ["question", "options", "answerIndex", "explanations"]
+      }
+    }
+  });
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: requestBody
+  });
+
+  if(!resp.ok){
+    const errText = await resp.text();
+    throw new Error("HTTP " + resp.status + ": " + errText.slice(0, 300));
+  }
+
+  const data = await resp.json();
+  const candidate = data.candidates?.[0];
+  if(!candidate || !candidate.content?.parts?.[0]?.text) {
+    throw new Error("유효한 응답을 받지 못했습니다.");
+  }
+
+  const parsed = JSON.parse(candidate.content.parts[0].text);
+  if(!parsed.question || !Array.isArray(parsed.options) || parsed.options.length !== 4 ||
+     typeof parsed.answerIndex !== "number" || !Array.isArray(parsed.explanations) || parsed.explanations.length !== 4){
+    throw new Error("응답 데이터 형태가 올바르지 않습니다.");
+  }
+
+  state.askedQuestions.push(parsed.question);
+  return {
+    question: parsed.question,
+    options: parsed.options,
+    answerIndex: parsed.answerIndex,
+    explanations: parsed.explanations,
+    userIndex: null
+  };
+}
+
+async function prefetchNext(){
+  if(state.prefetching || state.queue.length > 0) return;
+  if(!state.fileData || !state.apiKey) return;
+  state.prefetching = true;
+  if(state.view === "quiz") render();
+  state.prefetchPromise = fetchOneQuestion()
+    .then(q => { state.queue.push(q); })
+    .catch(() => {})
+    .finally(() => {
+      state.prefetching = false;
+      state.prefetchPromise = null;
+      if(state.view === "quiz") render();
+    });
+  await state.prefetchPromise;
+}
+
+async function generateQuestion(){
+  if(!state.apiKey){
+    state.errorMsg = "우측 상단 설정(⚙️) 버튼을 눌러 Google Gemini API 키를 먼저 입력해 주세요.";
+    state.view = "settings";
+    render();
+    return;
+  }
+  if(!state.fileData){
+    state.errorMsg = "먼저 교재 이미지나 PDF 파일을 업로드해 주세요.";
+    render();
+    return;
+  }
+
+  if(state.queue.length === 0 && state.prefetching && state.prefetchPromise){
+    state.loadingQuestion = true;
+    state.errorMsg = "";
+    render();
+    await state.prefetchPromise;
+    state.loadingQuestion = false;
+  }
+
+  if(state.queue.length > 0){
+    state.current = state.queue.shift();
+    state.errorMsg = "";
+    render();
+    prefetchNext();
+    return;
+  }
+
+  state.loadingQuestion = true;
+  state.errorMsg = "";
+  state.current = null;
+  render();
+
+  try{
+    state.current = await fetchOneQuestion();
+  }catch(e){
+    if(e.message === "API_KEY_MISSING"){
+      state.errorMsg = "Google Gemini API 키가 입력되지 않았습니다.";
+      state.view = "settings";
+    } else {
+      state.errorMsg = "문제 생성에 실패했어요.\n" + e.message;
+    }
+  }
+  state.loadingQuestion = false;
+  render();
+
+  if(state.current) prefetchNext();
+}
+
+function answerQuestion(i){
+  if(!state.current || state.current.userIndex !== null) return;
+  state.current.userIndex = i;
+  state.stats.asked += 1;
+  const correct = i === state.current.answerIndex;
+  if(correct){
+    state.stats.correct += 1;
+  } else {
+    state.wrongNotes.unshift({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2,7),
+      question: state.current.question,
+      options: state.current.options,
+      answerIndex: state.current.answerIndex,
+      userIndex: i,
+      explanations: state.current.explanations,
+      ts: Date.now()
+    });
+    saveWrongNotes();
+  }
+  render();
+}
+
+function deleteNote(id){
+  state.wrongNotes = state.wrongNotes.filter(n => n.id !== id);
+  saveWrongNotes();
+  render();
+}
+function retryNote(note){
+  state.view = "quiz";
+  state.current = {
+    question: note.question,
+    options: note.options,
+    answerIndex: note.answerIndex,
+    explanations: note.explanations,
+    userIndex: null
+  };
+  render();
+}
+
+function setView(v){
+  state.view = v;
+  state.errorMsg = "";
+  render();
+  window.scrollTo(0, 0);
+}
+
+function saveApiKeyFromInput(){
+  const input = document.getElementById("api-key-input");
+  if(input){
+    state.apiKey = input.value.trim();
+    persistState();
+    alert("API 키가 임시 저장되었습니다.");
+    setView("select");
+  }
+}
+
+function renderSettings(){
+  return '<div class="card">' +
+    '<h2 class="section-title">Google Gemini 설정</h2>' +
+    '<p class="small muted" style="margin-bottom:12px;">문제 생성을 위해 발급받은 Gemini API 키를 입력해 주세요.</p>' +
+    '<label class="small" style="font-weight:600;">Gemini API Key</label>' +
+    '<input type="password" id="api-key-input" class="text-input" placeholder="AIzaSy..." value="' + escapeAttr(state.apiKey) + '">' +
+    '<button class="primary" style="margin-top:14px;" onclick="saveApiKeyFromInput()">저장하기</button>' +
+    '</div>' + 
+    '<div class="card" style="margin-top:14px;">' +
+    '<h2 class="section-title">데이터 보관 및 백업</h2>' +
+    '<p class="small muted" style="margin-bottom:12px;">아이폰 파일 앱에서는 새로고침 시 데이터가 날아갈 수 있습니다. 여기서 백업을 다운로드하고 나중에 다시 불러오세요.</p>' +
+    '<div style="display:flex;gap:10px;">' +
+    '<button class="secondary" style="flex:1;" onclick="downloadBackup()">내보내기 (저장)</button>' +
+    '<label class="secondary" style="flex:1;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;">' +
+    '불러오기<input type="file" accept=".txt,.json" style="display:none;" onchange="if(this.files[0]) restoreBackup(this.files[0])">' +
+    '</label>' +
+    '</div></div>';
+}
+
+function renderSelect(){
+  if(!state.apiKey){
+    return '<div class="card">' +
+      '<div class="big" style="margin-bottom:8px;">API 키 입력 필요</div>' +
+      '<div class="small muted" style="margin-bottom:14px;">문제를 생성하려면 우측 상단 설정 아이콘(⚙️)을 누르거나 아래 버튼을 눌러 Gemini API 키를 입력해 주세요.</div>' +
+      '<button class="primary" onclick="setView(\'settings\')">API 키 설정하기</button>' +
+      '</div>';
+  }
+  if(!state.fileData){
+    return '<label class="upload-box" for="file-input">' +
+      '<div class="big">교재 이미지 / PDF 업로드</div>' +
+      '<div class="small">탭해서 사진, 캡처본 또는 PDF 파일을 선택하세요</div>' +
+      '</label>' +
+      (state.errorMsg ? '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' : '');
+  }
+  let html = (state.errorMsg ? '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' : '') +
+    '<div class="card" style="display:flex;justify-content:space-between;align-items:center;">' +
+    '<div><div class="small" style="font-weight:600;">' + escapeHtml(state.fileName || "업로드된 자료") + '</div>' +
+    '<div class="small muted">파일 등록 완료</div></div>' +
+    '<label class="ghost" for="file-input" style="cursor:pointer;">다른 파일</label></div>' +
+    '<button class="primary" style="margin-top:6px;" onclick="startQuiz()">이 자료로 문제 풀기 시작</button>';
+  return html;
+}
+
+function startQuiz(){
+  if(!state.fileData) return;
+  state.view = "quiz";
+  render();
+  generateQuestion();
+}
+
+function renderQuiz(){
+  if(!state.fileData){
+    return '<div class="empty"><div class="big">먼저 파일을 업로드해 주세요</div><div class="small">‘자료 업로드’ 탭에서 시작할 수 있어요</div></div>';
+  }
+  if(state.loadingQuestion){
+    return '<div class="loading-wrap"><div class="spinner"></div><p>Gemini가 교재를 읽고 문제를 만들고 있어요…</p></div>';
+  }
+  let html = '<div class="stat-row">' +
+    '<div class="stat-box"><div class="num">' + state.stats.asked + '</div><div class="lbl">푼 문제</div></div>' +
+    '<div class="stat-box"><div class="num">' + state.stats.correct + '</div><div class="lbl">정답</div></div>' +
+    '</div>';
+
+  if(state.errorMsg){
+    html += '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' +
+      '<button class="primary" onclick="generateQuestion()">다시 시도</button>';
+    return html;
+  }
+
+  if(!state.current){
+    html += '<div class="empty"><div class="big">문제를 생성할 준비가 됐어요</div><div class="small">아래 버튼을 눌러 시작하세요</div></div>' +
+      '<button class="primary" onclick="generateQuestion()">문제 생성하기</button>';
+    return html;
+  }
+
+  const c = state.current;
+  const answered = c.userIndex !== null;
+  const letters = ["①","②","③","④"];
+
+  html += '<div class="card qcard">' +
+    '<p class="qtext">' + escapeHtml(c.question) + '</p>';
+
+  if(answered){
+    const correct = c.userIndex === c.answerIndex;
+    html += '<div class="feedback-banner ' + (correct ? "good" : "bad") + '">' + (correct ? "정답이에요" : "오답이에요") + '</div>';
+  }
+
+  c.options.forEach((opt, i) => {
+    let cls = "opt";
+    if(answered){
+      cls += " disabled";
+      if(i === c.answerIndex) cls += " correct";
+      else if(i === c.userIndex) cls += " wrong";
+    }
+    html += '<button class="' + cls + '" ' + (answered ? "disabled" : "") + ' onclick="answerQuestion(' + i + ')">' +
+      '<span class="lbl">' + letters[i] + '</span><span>' + escapeHtml(opt) + '</span></button>';
+    if(answered){
+      html += '<p class="explain">' + escapeHtml(c.explanations[i] || "") + '</p>';
+    }
+  });
+
+  html += '</div>';
+  if(answered){
+    let status = "";
+    if(state.queue.length > 0) status = "다음 문제 준비 완료";
+    else if(state.prefetching) status = "다음 문제 준비 중…";
+    if(status) html += '<p class="small muted" style="text-align:center;margin:0 0 8px;">' + status + '</p>';
+    html += '<button class="primary" onclick="generateQuestion()">다음 문제</button>';
+  }
+  return html;
+}
+
+function renderNotes(){
+  if(state.wrongNotes.length === 0){
+    return '<div class="empty"><div class="big">오답노트가 비어 있어요</div><div class="small">틀린 문제가 자동으로 여기에 쌓여요</div></div>';
+  }
+  const letters = ["①","②","③","④"];
+  let html = '<p class="small muted" style="margin-bottom:10px;">총 ' + state.wrongNotes.length + '개</p>';
+  state.wrongNotes.forEach(n => {
+    html += '<div class="note-item">' +
+      '<p class="note-q">' + escapeHtml(n.question) + '</p>' +
+      '<p class="small muted" style="margin:0 0 4px;">내 답: ' + letters[n.userIndex] + ' ' + escapeHtml(n.options[n.userIndex]) + '</p>' +
+      '<p class="small" style="color:var(--good);margin:0;">정답: ' + letters[n.answerIndex] + ' ' + escapeHtml(n.options[n.answerIndex]) + '</p>' +
+      '<p class="explain" style="margin-left:0;">' + escapeHtml(n.explanations[n.answerIndex] || "") + '</p>' +
+      '<div class="note-row">' +
+      '<button class="secondary" onclick=\'retryNote(' + escapeAttr(JSON.stringify(n)) + ')\'>다시 풀기</button>' +
+      '<button class="secondary" onclick="deleteNote(\'' + n.id + '\')">복습 완료 · 삭제</button>' +
+      '</div></div>';
+  });
+  return html;
+}
+
+function render(){
+  document.querySelectorAll("#bottom-nav button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.view === state.view);
+  });
+  const mainEl = document.getElementById("app-main");
+  const subEl = document.getElementById("header-sub");
+  let html = "";
+  if(state.view === "select"){
+    subEl.textContent = "교재 캡처 이미지나 PDF를 올려주세요";
+    html = renderSelect();
+  } else if(state.view === "quiz"){
+    subEl.textContent = "자료 내용을 바탕으로 문제가 출제돼요";
+    html = renderQuiz();
+  } else if(state.view === "settings"){
+    subEl.textContent = "Gemini API 및 데이터를 관리합니다";
+    html = renderSettings();
+  } else {
+    subEl.textContent = "틀린 문제만 모아서 복습하세요";
+    html = renderNotes();
+  }
+  mainEl.innerHTML = html;
+
+  const fileInput = document.getElementById("file-input");
+  if(fileInput) fileInput.onchange = e => { if(e.target.files[0]) handleFileUpload(e.target.files[0]); };
+}
+
+document.querySelectorAll("#bottom-nav button").forEach(btn => {
+  btn.addEventListener("click", () => setView(btn.dataset.view));
+});
+
+(async function init(){
+  document.getElementById("app-main").innerHTML = '<div class="loading-wrap"><div class="spinner"></div><p>불러오는 중…</p></div>';
+  await loadPersisted();
+  const uploadInputHtml = '<input type="file" id="file-input" accept="image/*,application/pdf">';
+  document.body.insertAdjacentHTML("beforeend", uploadInputHtml);
+  render();
+})();
+</script>
+</body>
+</html>
