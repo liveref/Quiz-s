@@ -250,7 +250,7 @@ async function fetchOneQuestion(){
   if(!state.fileData) throw new Error("NO_FILE");
 
   // 기억하는 이전 문제 개수를 5개에서 15개로 늘림
-  const recentQs = state.askedQuestions.slice(-15).map(sanitizeForApi);
+  const recentQs = state.askedQuestions.slice(-50).map(sanitizeForApi);
   let avoid = "";
   if(recentQs.length){
     avoid = "\n\n[중요 조건] 다음은 이미 출제된 문제들입니다. 아래 문제들과 '핵심 개념'이 절대 겹치지 않도록, 문서의 '전혀 다른 페이지'나 '다른 파트'를 찾아서 새로운 문제를 출제하세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
