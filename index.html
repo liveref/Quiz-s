@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>교재 단답 문제 생성기</title>
+<title>교재 비전 문제 생성기</title>
 <style>
   :root{
     --bg:#F3F5F8; --surface:#FFFFFF; --ink:#1B2333; --muted:#667085;
@@ -98,7 +98,7 @@
 <div id="app">
   <header>
     <div>
-      <h1 id="header-title">교재 단답 문제 생성기</h1>
+      <h1 id="header-title">교재 비전 문제 생성기</h1>
       <p id="header-sub">교재 캡처 이미지나 PDF를 올리면 바로 문제를 만들어드려요</p>
     </div>
     <button class="settings-btn" onclick="setView('settings')" title="설정">⚙️</button>
@@ -249,19 +249,22 @@ async function fetchOneQuestion(){
   if(!state.apiKey) throw new Error("API_KEY_MISSING");
   if(!state.fileData) throw new Error("NO_FILE");
 
-  const recentQs = state.askedQuestions.slice(-5).map(sanitizeForApi);
+  // 기억하는 이전 문제 개수를 5개에서 15개로 늘림
+  const recentQs = state.askedQuestions.slice(-15).map(sanitizeForApi);
   let avoid = "";
   if(recentQs.length){
-    avoid = "\n\n다음 문제들과는 다른 새로운 내용을 출제해주세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
+    avoid = "\n\n[중요 조건] 다음은 이미 출제된 문제들입니다. 아래 문제들과 '핵심 개념'이 절대 겹치지 않도록, 문서의 '전혀 다른 페이지'나 '다른 파트'를 찾아서 새로운 문제를 출제하세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
   }
 
-  const systemInstruction = "당신은 한국어 자격시험 출제 전문가입니다. 첨부된 교재 이미지/문서 내용을 근거로 실제 시험 수준의 4지선다 문제를 만듭니다.";
+  // 시스템 및 프롬프트 명령 강화 (전체 범위에서 골고루 출제 유도)
+  const systemInstruction = "당신은 한국어 자격시험 출제 전문가입니다. 첨부된 문서의 앞부분에만 치우치지 않고, 문서 '전체 범위'를 무작위로 탐색하여 다양한 개념을 골고루 출제해야 합니다.";
   
-  const prompt = `첨부된 교재 자료를 분석하여 4지선다 문제를 1개 만들어주세요.\n` +
+  const prompt = `첨부된 자료 전체를 골고루 분석하여 4지선다 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심어를 골라야 합니다.\n` +
     `조건:\n- question: 명확하고 구체적인 질문 (한 문장)\n- options: 선택지 4개 배열, 정답 1개와 그럴듯한 오답 3개 (※ 주의: 모든 선택지는 긴 문장이 아닌, 아주 짧은 단어나 명사 위주의 '단답형'으로만 작성할 것)\n` +
     `- answerIndex: 정답의 인덱스(0~3, 정수)\n- explanations: 4개 선택지 각각에 대한 해설 배열 (왜 맞는지, 왜 틀렸는지 구체적으로)` +
     avoid;
 
+  // 플래시 라이트 모델로 변경됨
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${state.apiKey}`;
 
   const requestBody = JSON.stringify({
@@ -274,6 +277,7 @@ async function fetchOneQuestion(){
       ]
     }],
     generationConfig: {
+      temperature: 0.7, // 창의성(무작위성)을 약간 높여 다양한 파트를 선택하도록 유도
       response_mime_type: "application/json",
       response_schema: {
         type: "OBJECT",
