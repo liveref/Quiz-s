@@ -247,16 +247,22 @@ async function fetchOneQuestion(){
     avoid = "\n\n[중요 조건] 다음은 이미 출제된 문제들입니다. 아래 문제들과 '핵심 개념'이 절대 겹치지 않도록, 문서의 전혀 다른 페이지나 다른 파트를 찾아서 완전히 새로운 문제를 출제하세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
   }
 
-  const isShort = state.quizMode === "short";
+const isShort = state.quizMode === "short";
+  
+  // 1. AI의 역할을 단답형 전문 출제위원으로 좁히고, 명확한 단어만 요구하도록 지시
   const systemInstruction = isShort 
-    ? "당신은 주관식 단답형 출제 전문가입니다. 문서 전체 범위를 무작위로 탐색하여 다양한 핵심 용어(키워드)를 맞추는 문제를 골고루 출제해야 합니다."
+    ? "당신은 IT 및 기술 전문 주관식 단답형 출제 위원입니다. 실제 시험에 출제될 확률이 높은 '핵심 기술 용어', '고유 명사', '영문 약어(예: React, COT 등)'만을 정답으로 요구해야 합니다. '구조화된 출력 요구' 같은 서술형 구(phrase)나 모호한 문장형 정답은 절대 출제하지 마세요. 정답은 반드시 딱 떨어지는 1개의 명사 단어로 구성되어야 합니다."
     : "당신은 객관식 4지선다 출제 전문가입니다. 문서 전체 범위를 무작위로 탐색하여 다양한 개념을 골고루 출제해야 합니다.";
 
   let prompt, responseSchema;
 
   if(isShort){
-    prompt = `첨부된 자료 전체를 골고루 분석하여 주관식 단답형 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심 내용을 골라야 합니다.\n` +
-      `조건:\n- question: 정답 용어를 직접 언급하지 않고 그 정의나 특징을 상세히 설명하는 질문 (한 문장)\n- exactAnswer: 정답 (불필요한 조사나 어미를 뺀 1~5단어 내외의 핵심 명사형 키워드)\n- explanation: 정답에 대한 구체적인 해설\n` + avoid;
+    // 2. 주관식 정답(exactAnswer)의 조건을 1단어 전문 용어로 강력하게 제한
+    prompt = `첨부된 자료를 분석하여 실제 시험에 나올 법한 핵심 주관식 단답형 문제를 1개 만들어주세요. 문서의 무작위 위치에서 새로운 핵심 내용을 고르세요.\n` +
+      `조건:\n` +
+      `- question: 정답 용어를 직접 언급하지 않고 그 정의나 특징, 목적을 상세히 설명하는 질문\n` +
+      `- exactAnswer: 서술형이나 긴 구절 절대 금지. 무조건 1단어(또는 명확한 영어 약어) 형태의 고유 명사 / 전문 기술 용어\n` +
+      `- explanation: 정답에 대한 구체적인 해설\n` + avoid;
     
     responseSchema = {
       type: "OBJECT",
@@ -268,6 +274,7 @@ async function fetchOneQuestion(){
       required: ["question", "exactAnswer", "explanation"]
     };
   } else {
+    // (이하 객관식 코드는 기존과 동일하게 유지)
     prompt = `첨부된 자료 전체를 골고루 분석하여 4지선다 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심 내용을 골라야 합니다.\n` +
       `조건:\n- question: 명확하고 구체적인 질문 (한 문장)\n- options: 선택지 4개 배열, 정답 1개와 오답 3개 (명확한 문장 형태)\n- answerIndex: 정답 인덱스(0~3)\n- explanations: 4개 선택지 각각에 대한 해설 배열\n` + avoid;
       
