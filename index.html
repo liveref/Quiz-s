@@ -55,7 +55,12 @@
   label.upload-box .big{font-size:14.5px;font-weight:600;}
   label.upload-box .small{color:var(--muted);}
 
-  .qcard .qtext{font-size:15px;font-weight:600;margin:0 0 4px;}
+  /* 모드 토글 스위치 */
+  .mode-toggle{display:flex;background:#E3E7EE;border-radius:10px;padding:4px;margin-bottom:16px;}
+  .mode-toggle button{flex:1;border:none;background:none;padding:10px;font-size:13.5px;font-weight:600;color:var(--muted);border-radius:8px;cursor:pointer;}
+  .mode-toggle button.active{background:#fff;color:var(--ink);box-shadow:0 2px 4px rgba(0,0,0,0.05);}
+
+  .qcard .qtext{font-size:15px;font-weight:600;margin:0 0 14px;line-height:1.6;}
   .opt{
     display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;padding:13px;
     border:0.5px solid var(--line);border-radius:10px;background:#fff;font-size:13.5px;margin-bottom:8px;cursor:pointer;
@@ -66,15 +71,23 @@
   .opt.wrong{border-color:var(--bad);background:var(--bad-bg);}
   .opt.wrong .lbl{color:var(--bad);}
   .opt.disabled{cursor:default;}
-  .explain{font-size:12.5px;color:var(--muted);margin:6px 0 0 30px;}
-  .opt.correct + .explain{color:var(--good);}
-  .opt.wrong + .explain{color:var(--bad);}
+  
+  /* 주관식 입력 */
+  .short-input-wrap{display:flex;gap:8px;margin-bottom:14px;}
+  .short-input-wrap input{flex:1;border:1px solid var(--accent);border-radius:10px;padding:12px 14px;font-size:15px;outline:none;}
+  .short-input-wrap input:disabled{background:#F3F5F8;border-color:var(--line);color:var(--muted);}
+  .short-input-wrap button{padding:0 20px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;}
+  .short-input-wrap button:disabled{background:#B9C4E8;cursor:not-allowed;}
+
+  .explain{font-size:12.5px;color:var(--muted);margin:6px 0 0 0;line-height:1.5;}
+  .opt-explain-wrap{margin-left:30px;}
 
   .feedback-banner{padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:600;margin-bottom:14px;}
   .feedback-banner.good{background:var(--good-bg);color:var(--good);}
   .feedback-banner.bad{background:var(--bad-bg);color:var(--bad);}
 
   .note-item{border:0.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff;}
+  .note-item .note-badge{display:inline-block;padding:2px 8px;border-radius:6px;background:var(--line);font-size:11px;font-weight:600;color:var(--ink);margin-bottom:8px;}
   .note-item .note-q{font-size:13.5px;font-weight:600;margin:0 0 8px;}
   .note-item .note-row{display:flex;justify-content:space-between;gap:8px;margin-top:10px;}
 
@@ -98,7 +111,7 @@
 <div id="app">
   <header>
     <div>
-      <h1 id="header-title">교재 단답 문제 생성기</h1>
+      <h1 id="header-title">교재 비전 문제 생성기</h1>
       <p id="header-sub">교재 캡처 이미지나 PDF를 올리면 바로 문제를 만들어드려요</p>
     </div>
     <button class="settings-btn" onclick="setView('settings')" title="설정">⚙️</button>
@@ -121,6 +134,7 @@ async function storageSet(key, value){
 
 const state = {
   view: "select",
+  quizMode: "multiple", // 'multiple' | 'short'
   apiKey: "",
   fileName: "",
   fileData: null,
@@ -162,39 +176,17 @@ async function saveWrongNotes(){
   await storageSet("wrongnotes", JSON.stringify(state.wrongNotes));
 }
 
-function downloadBackup() {
-  if (state.wrongNotes.length === 0) {
-    alert("저장할 오답노트가 없습니다.");
-    return;
+function setQuizMode(mode){
+  if(state.quizMode === mode) return;
+  state.quizMode = mode;
+  state.queue = []; 
+  state.current = null;
+  state.errorMsg = "";
+  if(state.fileData) {
+    generateQuestion();
+  } else {
+    render();
   }
-  const data = { notes: state.wrongNotes, stats: state.stats, apiKey: state.apiKey };
-  const blob = new Blob([JSON.stringify(data)], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "오답노트_백업데이터.txt";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function restoreBackup(file) {
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    try {
-      const data = JSON.parse(e.target.result);
-      if(data.notes) state.wrongNotes = data.notes;
-      if(data.stats) state.stats = data.stats;
-      if(data.apiKey) state.apiKey = data.apiKey;
-      await saveWrongNotes();
-      alert("✅ 오답노트 데이터가 성공적으로 복구되었습니다!");
-      setView("notes");
-    } catch(err) {
-      alert("❌ 잘못된 백업 파일입니다.");
-    }
-  };
-  reader.readAsText(file);
 }
 
 function sanitizeForApi(str){
@@ -249,22 +241,48 @@ async function fetchOneQuestion(){
   if(!state.apiKey) throw new Error("API_KEY_MISSING");
   if(!state.fileData) throw new Error("NO_FILE");
 
-  // 기억하는 이전 문제 개수를 5개에서 15개로 늘림
-  const recentQs = state.askedQuestions.slice(-100).map(sanitizeForApi);
+  const recentQs = state.askedQuestions.slice(-50).map(sanitizeForApi);
   let avoid = "";
   if(recentQs.length){
-    avoid = "\n\n[중요 조건] 다음은 이미 출제된 문제들입니다. 아래 문제들과 '핵심 개념'이 절대 겹치지 않도록, 문서의 '전혀 다른 페이지'나 '다른 파트'를 찾아서 새로운 문제를 출제하세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
+    avoid = "\n\n[중요 조건] 다음은 이미 출제된 문제들입니다. 아래 문제들과 '핵심 개념'이 절대 겹치지 않도록, 문서의 전혀 다른 페이지나 다른 파트를 찾아서 완전히 새로운 문제를 출제하세요:\n" + recentQs.map((q,i)=>(i+1)+". "+q).join("\n");
   }
 
-  // 시스템 및 프롬프트 명령 강화 (전체 범위에서 골고루 출제 유도)
-  const systemInstruction = "당신은 AI프롬프트 활용능력 1급 자격시험 출제 전문가입니다. 첨부된 문서의 앞부분에만 치우치지 않고, 문서 '전체 범위'를 무작위로 탐색하여 다양한 개념을 골고루 출제해야 합니다.";
-  
-  const prompt = `첨부된 자료 전체를 골고루 분석하여 4지선다 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심어를 골라야 합니다.\n` +
-    `조건:\n- question: 명확하고 구체적인 질문 (한 문장)\n- options: 선택지 4개 배열, 정답 1개와 그럴듯한 오답 3개 (※ 주의: 모든 선택지는 긴 문장이 아닌, 아주 짧은 단어나 명사 위주의 '단답형'으로만 작성할 것)\n` +
-    `- answerIndex: 정답의 인덱스(0~3, 정수)\n- explanations: 4개 선택지 각각에 대한 해설 배열 (왜 맞는지, 왜 틀렸는지 구체적으로)` +
-    avoid;
+  const isShort = state.quizMode === "short";
+  const systemInstruction = isShort 
+    ? "당신은 주관식 단답형 출제 전문가입니다. 문서 전체 범위를 무작위로 탐색하여 다양한 핵심 용어(키워드)를 맞추는 문제를 골고루 출제해야 합니다."
+    : "당신은 객관식 4지선다 출제 전문가입니다. 문서 전체 범위를 무작위로 탐색하여 다양한 개념을 골고루 출제해야 합니다.";
 
-  // 플래시 라이트 모델로 변경됨
+  let prompt, responseSchema;
+
+  if(isShort){
+    prompt = `첨부된 자료 전체를 골고루 분석하여 주관식 단답형 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심 내용을 골라야 합니다.\n` +
+      `조건:\n- question: 정답 용어를 직접 언급하지 않고 그 정의나 특징을 상세히 설명하는 질문 (한 문장)\n- exactAnswer: 정답 (불필요한 조사나 어미를 뺀 1~5단어 내외의 핵심 명사형 키워드)\n- explanation: 정답에 대한 구체적인 해설\n` + avoid;
+    
+    responseSchema = {
+      type: "OBJECT",
+      properties: {
+        question: { type: "STRING" },
+        exactAnswer: { type: "STRING" },
+        explanation: { type: "STRING" }
+      },
+      required: ["question", "exactAnswer", "explanation"]
+    };
+  } else {
+    prompt = `첨부된 자료 전체를 골고루 분석하여 4지선다 문제를 1개 만들어주세요. 매번 문서의 무작위 위치에서 새로운 핵심 내용을 골라야 합니다.\n` +
+      `조건:\n- question: 명확하고 구체적인 질문 (한 문장)\n- options: 선택지 4개 배열, 정답 1개와 오답 3개 (명확한 문장 형태)\n- answerIndex: 정답 인덱스(0~3)\n- explanations: 4개 선택지 각각에 대한 해설 배열\n` + avoid;
+      
+    responseSchema = {
+      type: "OBJECT",
+      properties: {
+        question: { type: "STRING" },
+        options: { type: "ARRAY", items: { type: "STRING" } },
+        answerIndex: { type: "INTEGER" },
+        explanations: { type: "ARRAY", items: { type: "STRING" } }
+      },
+      required: ["question", "options", "answerIndex", "explanations"]
+    };
+  }
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${state.apiKey}`;
 
   const requestBody = JSON.stringify({
@@ -277,18 +295,9 @@ async function fetchOneQuestion(){
       ]
     }],
     generationConfig: {
-      temperature: 0.7, // 창의성(무작위성)을 약간 높여 다양한 파트를 선택하도록 유도
+      temperature: 0.8,
       response_mime_type: "application/json",
-      response_schema: {
-        type: "OBJECT",
-        properties: {
-          question: { type: "STRING" },
-          options: { type: "ARRAY", items: { type: "STRING" } },
-          answerIndex: { type: "INTEGER" },
-          explanations: { type: "ARRAY", items: { type: "STRING" } }
-        },
-        required: ["question", "options", "answerIndex", "explanations"]
-      }
+      response_schema: responseSchema
     }
   });
 
@@ -310,19 +319,31 @@ async function fetchOneQuestion(){
   }
 
   const parsed = JSON.parse(candidate.content.parts[0].text);
-  if(!parsed.question || !Array.isArray(parsed.options) || parsed.options.length !== 4 ||
-     typeof parsed.answerIndex !== "number" || !Array.isArray(parsed.explanations) || parsed.explanations.length !== 4){
-    throw new Error("응답 데이터 형태가 올바르지 않습니다.");
+  
+  if(isShort){
+    if(!parsed.question || !parsed.exactAnswer || !parsed.explanation) throw new Error("응답 데이터 형태 오류(주관식).");
+    state.askedQuestions.push(parsed.question);
+    return {
+      type: "short",
+      question: parsed.question,
+      exactAnswer: parsed.exactAnswer,
+      explanation: parsed.explanation,
+      answered: false,
+      userInput: null
+    };
+  } else {
+    if(!parsed.question || !parsed.options || typeof parsed.answerIndex !== "number") throw new Error("응답 데이터 형태 오류(객관식).");
+    state.askedQuestions.push(parsed.question);
+    return {
+      type: "multiple",
+      question: parsed.question,
+      options: parsed.options,
+      answerIndex: parsed.answerIndex,
+      explanations: parsed.explanations,
+      answered: false,
+      userIndex: null
+    };
   }
-
-  state.askedQuestions.push(parsed.question);
-  return {
-    question: parsed.question,
-    options: parsed.options,
-    answerIndex: parsed.answerIndex,
-    explanations: parsed.explanations,
-    userIndex: null
-  };
 }
 
 async function prefetchNext(){
@@ -343,20 +364,17 @@ async function prefetchNext(){
 
 async function generateQuestion(){
   if(!state.apiKey){
-    state.errorMsg = "우측 상단 설정(⚙️) 버튼을 눌러 Google Gemini API 키를 먼저 입력해 주세요.";
+    state.errorMsg = "API 키를 먼저 입력해 주세요.";
     state.view = "settings";
-    render();
-    return;
+    render(); return;
   }
   if(!state.fileData){
-    state.errorMsg = "먼저 교재 이미지나 PDF 파일을 업로드해 주세요.";
-    render();
-    return;
+    state.errorMsg = "파일을 먼저 업로드해 주세요.";
+    render(); return;
   }
 
   if(state.queue.length === 0 && state.prefetching && state.prefetchPromise){
     state.loadingQuestion = true;
-    state.errorMsg = "";
     render();
     await state.prefetchPromise;
     state.loadingQuestion = false;
@@ -378,12 +396,7 @@ async function generateQuestion(){
   try{
     state.current = await fetchOneQuestion();
   }catch(e){
-    if(e.message === "API_KEY_MISSING"){
-      state.errorMsg = "Google Gemini API 키가 입력되지 않았습니다.";
-      state.view = "settings";
-    } else {
-      state.errorMsg = "문제 생성에 실패했어요.\n" + e.message;
-    }
+    state.errorMsg = "문제 생성 실패: " + e.message;
   }
   state.loadingQuestion = false;
   render();
@@ -391,16 +404,61 @@ async function generateQuestion(){
   if(state.current) prefetchNext();
 }
 
-function answerQuestion(i){
-  if(!state.current || state.current.userIndex !== null) return;
-  state.current.userIndex = i;
+// 주관식 답안 제출
+window.submitShortAnswer = function(){
+  if(!state.current || state.current.type !== "short" || state.current.answered) return;
+  const inputEl = document.getElementById("short-ans-input");
+  const val = inputEl.value.trim();
+  if(!val){
+    alert("정답을 입력해주세요.");
+    inputEl.focus();
+    return;
+  }
+
+  state.current.userInput = val;
+  state.current.answered = true;
   state.stats.asked += 1;
+
+  // 공백 제거 및 소문자 변환하여 유연하게 채점
+  const cleanVal = val.replace(/\s/g, '').toLowerCase();
+  const cleanAns = state.current.exactAnswer.replace(/\s/g, '').toLowerCase();
+  const isCorrect = (cleanVal === cleanAns);
+
+  if(isCorrect){
+    state.stats.correct += 1;
+  } else {
+    state.wrongNotes.unshift({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2,7),
+      type: "short",
+      question: state.current.question,
+      exactAnswer: state.current.exactAnswer,
+      userInput: val,
+      explanation: state.current.explanation,
+      ts: Date.now()
+    });
+    saveWrongNotes();
+  }
+  render();
+}
+
+window.handleShortEnter = function(e){
+  if(e.key === 'Enter') window.submitShortAnswer();
+}
+
+// 객관식 답안 선택
+window.answerMultipleQuestion = function(i){
+  if(!state.current || state.current.type !== "multiple" || state.current.answered) return;
+  state.current.userIndex = i;
+  state.current.answered = true;
+  state.stats.asked += 1;
+  
   const correct = i === state.current.answerIndex;
   if(correct){
     state.stats.correct += 1;
   } else {
     state.wrongNotes.unshift({
       id: Date.now() + "-" + Math.random().toString(36).slice(2,7),
+      type: "multiple",
       question: state.current.question,
       options: state.current.options,
       answerIndex: state.current.answerIndex,
@@ -418,15 +476,32 @@ function deleteNote(id){
   saveWrongNotes();
   render();
 }
+
 function retryNote(note){
   state.view = "quiz";
-  state.current = {
-    question: note.question,
-    options: note.options,
-    answerIndex: note.answerIndex,
-    explanations: note.explanations,
-    userIndex: null
-  };
+  state.quizMode = note.type || "multiple"; // 노트 타입에 맞게 모드 변경
+  state.queue = []; // 큐 비우기
+  
+  if(note.type === "short"){
+    state.current = {
+      type: "short",
+      question: note.question,
+      exactAnswer: note.exactAnswer,
+      explanation: note.explanation,
+      answered: false,
+      userInput: null
+    };
+  } else {
+    state.current = {
+      type: "multiple",
+      question: note.question,
+      options: note.options,
+      answerIndex: note.answerIndex,
+      explanations: note.explanations,
+      answered: false,
+      userIndex: null
+    };
+  }
   render();
 }
 
@@ -437,121 +512,93 @@ function setView(v){
   window.scrollTo(0, 0);
 }
 
-function saveApiKeyFromInput(){
-  const input = document.getElementById("api-key-input");
-  if(input){
-    state.apiKey = input.value.trim();
-    persistState();
-    alert("API 키가 임시 저장되었습니다.");
-    setView("select");
-  }
-}
-
-function renderSettings(){
+function renderSettings(){ /* 기존 설정 화면 동일 */
   return '<div class="card">' +
     '<h2 class="section-title">Google Gemini 설정</h2>' +
-    '<p class="small muted" style="margin-bottom:12px;">문제 생성을 위해 발급받은 Gemini API 키를 입력해 주세요.</p>' +
-    '<label class="small" style="font-weight:600;">Gemini API Key</label>' +
+    '<p class="small muted" style="margin-bottom:12px;">발급받은 API 키를 입력해 주세요.</p>' +
     '<input type="password" id="api-key-input" class="text-input" placeholder="AIzaSy..." value="' + escapeAttr(state.apiKey) + '">' +
-    '<button class="primary" style="margin-top:14px;" onclick="saveApiKeyFromInput()">저장하기</button>' +
-    '</div>' + 
-    '<div class="card" style="margin-top:14px;">' +
-    '<h2 class="section-title">데이터 보관 및 백업</h2>' +
-    '<p class="small muted" style="margin-bottom:12px;">아이폰 파일 앱에서는 새로고침 시 데이터가 날아갈 수 있습니다. 여기서 백업을 다운로드하고 나중에 다시 불러오세요.</p>' +
-    '<div style="display:flex;gap:10px;">' +
-    '<button class="secondary" style="flex:1;" onclick="downloadBackup()">내보내기 (저장)</button>' +
-    '<label class="secondary" style="flex:1;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;">' +
-    '불러오기<input type="file" accept=".txt,.json" style="display:none;" onchange="if(this.files[0]) restoreBackup(this.files[0])">' +
-    '</label>' +
-    '</div></div>';
+    '<button class="primary" style="margin-top:14px;" onclick="saveApiKeyFromInput()">저장하기</button></div>';
+}
+window.saveApiKeyFromInput = function(){
+  const input = document.getElementById("api-key-input");
+  if(input){ state.apiKey = input.value.trim(); persistState(); alert("저장 완료"); setView("select"); }
 }
 
 function renderSelect(){
-  if(!state.apiKey){
-    return '<div class="card">' +
-      '<div class="big" style="margin-bottom:8px;">API 키 입력 필요</div>' +
-      '<div class="small muted" style="margin-bottom:14px;">문제를 생성하려면 우측 상단 설정 아이콘(⚙️)을 누르거나 아래 버튼을 눌러 Gemini API 키를 입력해 주세요.</div>' +
-      '<button class="primary" onclick="setView(\'settings\')">API 키 설정하기</button>' +
-      '</div>';
-  }
-  if(!state.fileData){
-    return '<label class="upload-box" for="file-input">' +
-      '<div class="big">교재 이미지 / PDF 업로드</div>' +
-      '<div class="small">탭해서 사진, 캡처본 또는 PDF 파일을 선택하세요</div>' +
-      '</label>' +
-      (state.errorMsg ? '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' : '');
-  }
-  let html = (state.errorMsg ? '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' : '') +
-    '<div class="card" style="display:flex;justify-content:space-between;align-items:center;">' +
-    '<div><div class="small" style="font-weight:600;">' + escapeHtml(state.fileName || "업로드된 자료") + '</div>' +
-    '<div class="small muted">파일 등록 완료</div></div>' +
-    '<label class="ghost" for="file-input" style="cursor:pointer;">다른 파일</label></div>' +
-    '<button class="primary" style="margin-top:6px;" onclick="startQuiz()">이 자료로 문제 풀기 시작</button>';
-  return html;
+  if(!state.apiKey) return '<div class="card"><div class="big">API 키 입력 필요</div><button class="primary" style="margin-top:14px;" onclick="setView(\'settings\')">API 키 설정</button></div>';
+  if(!state.fileData) return '<label class="upload-box" for="file-input"><div class="big">교재 이미지 / PDF 업로드</div><div class="small">탭해서 파일 선택</div></label>';
+  return '<div class="card"><div class="small" style="font-weight:600;">' + escapeHtml(state.fileName) + '</div><label class="ghost" for="file-input" style="cursor:pointer;">다른 파일</label></div>' +
+    '<button class="primary" style="margin-top:6px;" onclick="startQuiz()">문제 풀기 시작</button>';
 }
-
-function startQuiz(){
-  if(!state.fileData) return;
-  state.view = "quiz";
-  render();
-  generateQuestion();
-}
+window.startQuiz = function(){ if(!state.fileData) return; state.view = "quiz"; render(); generateQuestion(); }
 
 function renderQuiz(){
-  if(!state.fileData){
-    return '<div class="empty"><div class="big">먼저 파일을 업로드해 주세요</div><div class="small">‘자료 업로드’ 탭에서 시작할 수 있어요</div></div>';
-  }
-  if(state.loadingQuestion){
-    return '<div class="loading-wrap"><div class="spinner"></div><p>Gemini가 교재를 읽고 문제를 만들고 있어요…</p></div>';
-  }
-  let html = '<div class="stat-row">' +
-    '<div class="stat-box"><div class="num">' + state.stats.asked + '</div><div class="lbl">푼 문제</div></div>' +
-    '<div class="stat-box"><div class="num">' + state.stats.correct + '</div><div class="lbl">정답</div></div>' +
+  if(!state.fileData) return '<div class="empty"><div class="big">파일을 먼저 업로드하세요</div></div>';
+  
+  // 모드 토글 스위치 렌더링
+  let html = '<div class="mode-toggle">' +
+    '<button class="' + (state.quizMode === "multiple" ? "active" : "") + '" onclick="setQuizMode(\'multiple\')">객관식 (4지선다)</button>' +
+    '<button class="' + (state.quizMode === "short" ? "active" : "") + '" onclick="setQuizMode(\'short\')">주관식 (단답형)</button>' +
     '</div>';
 
-  if(state.errorMsg){
-    html += '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div>' +
-      '<button class="primary" onclick="generateQuestion()">다시 시도</button>';
+  if(state.loadingQuestion){
+    html += '<div class="loading-wrap"><div class="spinner"></div><p>문제를 만들고 있어요…</p></div>';
     return html;
   }
 
-  if(!state.current){
-    html += '<div class="empty"><div class="big">문제를 생성할 준비가 됐어요</div><div class="small">아래 버튼을 눌러 시작하세요</div></div>' +
-      '<button class="primary" onclick="generateQuestion()">문제 생성하기</button>';
-    return html;
-  }
+  html += '<div class="stat-row"><div class="stat-box"><div class="num">' + state.stats.asked + '</div><div class="lbl">푼 문제</div></div><div class="stat-box"><div class="num">' + state.stats.correct + '</div><div class="lbl">정답</div></div></div>';
+
+  if(state.errorMsg) return html + '<div class="error-box">' + escapeHtml(state.errorMsg) + '</div><button class="primary" onclick="generateQuestion()">다시 시도</button>';
+  if(!state.current) return html + '<button class="primary" onclick="generateQuestion()">문제 생성하기</button>';
 
   const c = state.current;
-  const answered = c.userIndex !== null;
-  const letters = ["①","②","③","④"];
+  html += '<div class="card qcard"><p class="qtext">' + escapeHtml(c.question) + '</p>';
 
-  html += '<div class="card qcard">' +
-    '<p class="qtext">' + escapeHtml(c.question) + '</p>';
-
-  if(answered){
-    const correct = c.userIndex === c.answerIndex;
-    html += '<div class="feedback-banner ' + (correct ? "good" : "bad") + '">' + (correct ? "정답이에요" : "오답이에요") + '</div>';
+  if(c.type === "short"){
+    // 단답형 UI
+    if(c.answered){
+      const cleanVal = c.userInput.replace(/\s/g, '').toLowerCase();
+      const cleanAns = c.exactAnswer.replace(/\s/g, '').toLowerCase();
+      const isCorrect = (cleanVal === cleanAns);
+      html += '<div class="feedback-banner ' + (isCorrect ? "good" : "bad") + '">' + (isCorrect ? "정답입니다!" : "오답입니다") + '</div>';
+      
+      html += '<div style="margin-bottom:14px;">';
+      html += '<p class="small muted" style="margin:0;">내가 쓴 답: <span style="font-weight:600;color:var(--ink)">' + escapeHtml(c.userInput) + '</span></p>';
+      html += '<p class="small" style="margin:4px 0 0 0;color:var(--good);">실제 정답: <span style="font-weight:600;">' + escapeHtml(c.exactAnswer) + '</span></p>';
+      html += '</div>';
+      
+      html += '<div style="padding-top:10px;border-top:0.5px solid var(--line);"><p class="small" style="font-weight:600;margin:0 0 4px;">해설</p><p class="explain" style="margin:0;">' + escapeHtml(c.explanation) + '</p></div>';
+    } else {
+      html += '<div class="short-input-wrap">' +
+        '<input type="text" id="short-ans-input" placeholder="정답을 입력하세요" onkeydown="handleShortEnter(event)">' +
+        '<button onclick="submitShortAnswer()">제출</button>' +
+        '</div>';
+    }
+  } else {
+    // 객관식 UI
+    if(c.answered){
+      const isCorrect = c.userIndex === c.answerIndex;
+      html += '<div class="feedback-banner ' + (isCorrect ? "good" : "bad") + '">' + (isCorrect ? "정답입니다!" : "오답입니다") + '</div>';
+    }
+    const letters = ["①","②","③","④"];
+    c.options.forEach((opt, i) => {
+      let cls = "opt";
+      if(c.answered){
+        cls += " disabled";
+        if(i === c.answerIndex) cls += " correct";
+        else if(i === c.userIndex) cls += " wrong";
+      }
+      html += '<button class="' + cls + '" ' + (c.answered ? "disabled" : "") + ' onclick="answerMultipleQuestion(' + i + ')">' +
+        '<span class="lbl">' + letters[i] + '</span><span>' + escapeHtml(opt) + '</span></button>';
+      if(c.answered){
+        html += '<div class="opt-explain-wrap"><p class="explain">' + escapeHtml(c.explanations[i] || "") + '</p></div>';
+      }
+    });
   }
-
-  c.options.forEach((opt, i) => {
-    let cls = "opt";
-    if(answered){
-      cls += " disabled";
-      if(i === c.answerIndex) cls += " correct";
-      else if(i === c.userIndex) cls += " wrong";
-    }
-    html += '<button class="' + cls + '" ' + (answered ? "disabled" : "") + ' onclick="answerQuestion(' + i + ')">' +
-      '<span class="lbl">' + letters[i] + '</span><span>' + escapeHtml(opt) + '</span></button>';
-    if(answered){
-      html += '<p class="explain">' + escapeHtml(c.explanations[i] || "") + '</p>';
-    }
-  });
-
   html += '</div>';
-  if(answered){
-    let status = "";
-    if(state.queue.length > 0) status = "다음 문제 준비 완료";
-    else if(state.prefetching) status = "다음 문제 준비 중…";
+
+  if(c.answered){
+    let status = state.queue.length > 0 ? "다음 문제 준비 완료" : (state.prefetching ? "다음 문제 준비 중…" : "");
     if(status) html += '<p class="small muted" style="text-align:center;margin:0 0 8px;">' + status + '</p>';
     html += '<button class="primary" onclick="generateQuestion()">다음 문제</button>';
   }
@@ -559,49 +606,48 @@ function renderQuiz(){
 }
 
 function renderNotes(){
-  if(state.wrongNotes.length === 0){
-    return '<div class="empty"><div class="big">오답노트가 비어 있어요</div><div class="small">틀린 문제가 자동으로 여기에 쌓여요</div></div>';
-  }
-  const letters = ["①","②","③","④"];
+  if(state.wrongNotes.length === 0) return '<div class="empty"><div class="big">오답노트가 비어 있어요</div></div>';
   let html = '<p class="small muted" style="margin-bottom:10px;">총 ' + state.wrongNotes.length + '개</p>';
   state.wrongNotes.forEach(n => {
-    html += '<div class="note-item">' +
-      '<p class="note-q">' + escapeHtml(n.question) + '</p>' +
-      '<p class="small muted" style="margin:0 0 4px;">내 답: ' + letters[n.userIndex] + ' ' + escapeHtml(n.options[n.userIndex]) + '</p>' +
-      '<p class="small" style="color:var(--good);margin:0;">정답: ' + letters[n.answerIndex] + ' ' + escapeHtml(n.options[n.answerIndex]) + '</p>' +
-      '<p class="explain" style="margin-left:0;">' + escapeHtml(n.explanations[n.answerIndex] || "") + '</p>' +
-      '<div class="note-row">' +
+    html += '<div class="note-item">';
+    
+    if(n.type === "short"){
+      html += '<span class="note-badge">주관식</span>';
+      html += '<p class="note-q">' + escapeHtml(n.question) + '</p>';
+      html += '<p class="small muted" style="margin:0 0 4px;">내 답: ' + escapeHtml(n.userInput) + '</p>';
+      html += '<p class="small" style="color:var(--good);margin:0 0 8px 0;">정답: ' + escapeHtml(n.exactAnswer) + '</p>';
+      html += '<p class="explain" style="margin-left:0;">' + escapeHtml(n.explanation) + '</p>';
+    } else {
+      const letters = ["①","②","③","④"];
+      html += '<span class="note-badge">객관식</span>';
+      html += '<p class="note-q">' + escapeHtml(n.question) + '</p>';
+      html += '<p class="small muted" style="margin:0 0 4px;">내 답: ' + letters[n.userIndex] + ' ' + escapeHtml(n.options[n.userIndex]) + '</p>';
+      html += '<p class="small" style="color:var(--good);margin:0 0 8px 0;">정답: ' + letters[n.answerIndex] + ' ' + escapeHtml(n.options[n.answerIndex]) + '</p>';
+      html += '<p class="explain" style="margin-left:0;">' + escapeHtml(n.explanations[n.answerIndex]) + '</p>';
+    }
+
+    html += '<div class="note-row">' +
       '<button class="secondary" onclick=\'retryNote(' + escapeAttr(JSON.stringify(n)) + ')\'>다시 풀기</button>' +
-      '<button class="secondary" onclick="deleteNote(\'' + n.id + '\')">복습 완료 · 삭제</button>' +
+      '<button class="secondary" onclick="deleteNote(\'' + n.id + '\')">삭제</button>' +
       '</div></div>';
   });
   return html;
 }
 
 function render(){
-  document.querySelectorAll("#bottom-nav button").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.view === state.view);
-  });
+  document.querySelectorAll("#bottom-nav button").forEach(btn => btn.classList.toggle("active", btn.dataset.view === state.view));
   const mainEl = document.getElementById("app-main");
-  const subEl = document.getElementById("header-sub");
-  let html = "";
-  if(state.view === "select"){
-    subEl.textContent = "교재 캡처 이미지나 PDF를 올려주세요";
-    html = renderSelect();
-  } else if(state.view === "quiz"){
-    subEl.textContent = "자료 내용을 바탕으로 문제가 출제돼요";
-    html = renderQuiz();
-  } else if(state.view === "settings"){
-    subEl.textContent = "Gemini API 및 데이터를 관리합니다";
-    html = renderSettings();
-  } else {
-    subEl.textContent = "틀린 문제만 모아서 복습하세요";
-    html = renderNotes();
+  if(state.view === "select") mainEl.innerHTML = renderSelect();
+  else if(state.view === "quiz") {
+    mainEl.innerHTML = renderQuiz();
+    // 주관식 입력창이 렌더링되었다면 포커스
+    if(state.current && state.current.type === 'short' && !state.current.answered){
+       const input = document.getElementById("short-ans-input");
+       if(input) input.focus();
+    }
   }
-  mainEl.innerHTML = html;
-
-  const fileInput = document.getElementById("file-input");
-  if(fileInput) fileInput.onchange = e => { if(e.target.files[0]) handleFileUpload(e.target.files[0]); };
+  else if(state.view === "settings") mainEl.innerHTML = renderSettings();
+  else mainEl.innerHTML = renderNotes();
 }
 
 document.querySelectorAll("#bottom-nav button").forEach(btn => {
@@ -609,10 +655,10 @@ document.querySelectorAll("#bottom-nav button").forEach(btn => {
 });
 
 (async function init(){
-  document.getElementById("app-main").innerHTML = '<div class="loading-wrap"><div class="spinner"></div><p>불러오는 중…</p></div>';
   await loadPersisted();
   const uploadInputHtml = '<input type="file" id="file-input" accept="image/*,application/pdf">';
   document.body.insertAdjacentHTML("beforeend", uploadInputHtml);
+  document.getElementById("file-input").onchange = e => { if(e.target.files[0]) handleFileUpload(e.target.files[0]); };
   render();
 })();
 </script>
