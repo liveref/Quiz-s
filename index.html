@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>교재 비전 문제 생성기</title>
+<title>교재 주관식, 객관식(단답) 문제 생성기</title>
 <style>
   :root{
     --bg:#F3F5F8; --surface:#FFFFFF; --ink:#1B2333; --muted:#667085;
@@ -352,7 +352,12 @@ async function prefetchNext(){
   state.prefetching = true;
   if(state.view === "quiz") render();
   state.prefetchPromise = fetchOneQuestion()
-    .then(q => { state.queue.push(q); })
+    .then(q => { 
+      // 미리 생성된 문제의 타입이 현재 모드와 일치할 때만 큐에 저장합니다.
+      if(q.type === state.quizMode) {
+        state.queue.push(q); 
+      }
+    })
     .catch(() => {})
     .finally(() => {
       state.prefetching = false;
@@ -373,12 +378,16 @@ async function generateQuestion(){
     render(); return;
   }
 
+  // 대기 중인 프리페치 작업이 있다면 완료될 때까지 기다립니다.
   if(state.queue.length === 0 && state.prefetching && state.prefetchPromise){
     state.loadingQuestion = true;
     render();
     await state.prefetchPromise;
     state.loadingQuestion = false;
   }
+
+  // ★ 핵심 수정: 큐에 담긴 문제 중 현재 모드(주관식/객관식)와 일치하지 않는 과거 문제는 버립니다.
+  state.queue = state.queue.filter(q => q.type === state.quizMode);
 
   if(state.queue.length > 0){
     state.current = state.queue.shift();
@@ -388,6 +397,7 @@ async function generateQuestion(){
     return;
   }
 
+  // 큐가 비어있다면(미리 만들어둔 문제가 없거나 버려졌다면) 즉시 새로 생성합니다.
   state.loadingQuestion = true;
   state.errorMsg = "";
   state.current = null;
