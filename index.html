@@ -290,7 +290,7 @@ const isShort = state.quizMode === "short";
     };
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-5.0-pro:generateContent?key=${state.apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${state.apiKey}`;
 
   const requestBody = JSON.stringify({
     system_instruction: { parts: [{ text: systemInstruction }] },
